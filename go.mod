@@ -1,3 +1,3 @@
 module github.com/the-cloud-source/sysmetrics
 
-go 1.16
+go 1.20
