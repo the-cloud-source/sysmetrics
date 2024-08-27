@@ -1,8 +1,6 @@
 package sysmetrics
 
 import (
-	// #include <unistd.h>
-	"C"
 	"bufio"
 	"bytes"
 	"expvar"
@@ -13,7 +11,16 @@ import (
 	"strings"
 )
 
-var sc_clk_tck float64 = float64(C.sysconf(C._SC_CLK_TCK))
+const (
+	// CLK_TCK is a constant on Linux for all architectures except alpha and ia64.
+	// See e.g.
+	// https://git.musl-libc.org/cgit/musl/tree/src/conf/sysconf.c#n30
+	// https://github.com/containerd/cgroups/pull/12
+	// https://lore.kernel.org/lkml/agtlq6$iht$1@penguin.transmeta.com/
+	_SYSTEM_CLK_TCK = 100
+)
+
+var sc_clk_tck float64 = float64(_SYSTEM_CLK_TCK)
 var cputime cpuTimeStat = cpuTimeStat{-1, -1, "/proc/self/stat"}
 
 func init() {
