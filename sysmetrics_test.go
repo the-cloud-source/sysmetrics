@@ -17,11 +17,12 @@ func Test_cputime(t *testing.T) {
 	dump("proc.cpu.seconds")
 
 	for i := 0; i < 10000; i++ {
-
+		ii := i
 		go func() {
 			x := 0
 			for j := 0; j < 10000000; j++ {
-				x = x + j + i
+				jj := j
+				x = x + jj + ii
 			}
 			if x < 0 {
 				x++
