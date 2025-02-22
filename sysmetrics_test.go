@@ -6,6 +6,12 @@ import (
 	"testing"
 )
 
+func Test_runtime_metrics(t *testing.T) {
+	fmt.Printf("#----------------------------\n")
+	dump("runtime.metrics")
+	fmt.Printf("#----------------------------\n")
+}
+
 func Test_proc_stat(t *testing.T) {
 	fmt.Printf("#----------------------------\n")
 	dump("proc.stat")

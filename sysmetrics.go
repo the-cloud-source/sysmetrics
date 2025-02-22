@@ -6,9 +6,12 @@ import (
 	"expvar"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"runtime"
+	"runtime/metrics"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const (
@@ -27,6 +30,7 @@ func init() {
 	expvar.Publish("runtime", expvar.Func(runtimestats))
 	expvar.Publish("proc.stat", &procStat{"/proc/self/stat"})
 	expvar.Publish("proc.cpu.seconds", expvar.Func(cputimestats))
+	expvar.Publish("runtime.metrics", New_runtimeMetrics())
 }
 
 type cpuTimeStat struct {
@@ -67,6 +71,7 @@ type runtimestate struct {
 	NumCPU       int
 	NumCgoCall   int64
 	NumGoroutine int
+	Version      string
 }
 
 func runtimestats() interface{} {
@@ -74,6 +79,7 @@ func runtimestats() interface{} {
 		NumCPU:       runtime.NumCPU(),
 		NumCgoCall:   runtime.NumCgoCall(),
 		NumGoroutine: runtime.NumGoroutine(),
+		Version:      runtime.Version(),
 	}
 }
 
@@ -81,7 +87,7 @@ type procStat struct{ path string }
 
 var stat_names []string = []string{
 	"pid",         //01 -
-	"",            //02 - procname
+	"",            //02 - comm (truncated to 16 bytes, in ())
 	"",            //03 - state
 	"ppid",        //04 -
 	"pgrp",        //05 -
@@ -104,7 +110,7 @@ var stat_names []string = []string{
 	"starttime",   //22 -
 	"vsize",       //23 -
 	"rss",         //24 -
-	"rsslim",      //25 -
+	"",            //25 - rsslim
 	"",            //26 - startcode
 	"",            //27 - endcode
 	"",            //28 - startstack
@@ -145,19 +151,69 @@ func (v *procStat) String() string {
 	line, _, err := reader.ReadLine()
 	fields := strings.Fields(string(line))
 
-	first := true
+	sep := ""
 	fmt.Fprintf(&b, "{")
 	for i, e := range fields {
 		if i < len(stat_names) && stat_names[i] != "" {
-			if !first {
-				fmt.Fprintf(&b, ",")
+			fmt.Fprintf(&b, "%s%q:%v", sep, stat_names[i], e)
+			sep = ",\n"
+			if stat_names[i] == "rss" {
+				rss, err := strconv.Atoi(e)
+				if err != nil {
+					continue
+				}
+				fmt.Fprintf(&b, `%s"rssBytes":%v`, sep, rss*os.Getpagesize())
+				sep = ",\n"
 			}
-			fmt.Fprintf(&b, "%q:%v", stat_names[i], e)
 		} else {
 			// will pass here if kernel has new metrics
 		}
-		first = false
 	}
+	fmt.Fprintf(&b, "}")
+	return b.String()
+}
+
+type runtimeMetrics struct {
+	Samples []metrics.Sample
+	sync.Mutex
+}
+
+func New_runtimeMetrics() *runtimeMetrics {
+	descs := metrics.All()
+	v := &runtimeMetrics{}
+	samples := make([]metrics.Sample, len(descs))
+	for i := range samples {
+		samples[i].Name = descs[i].Name
+	}
+	v.Samples = samples
+	return v
+}
+
+func (v *runtimeMetrics) String() string {
+
+	var b bytes.Buffer
+
+	v.Lock()
+	defer v.Unlock()
+	metrics.Read(v.Samples)
+
+	sep := ""
+	fmt.Fprintf(&b, "{")
+	for _, sample := range v.Samples {
+		name, value := sample.Name, sample.Value
+		switch value.Kind() {
+		case metrics.KindUint64:
+			fmt.Fprintf(&b, "%s%q: %d", sep, name, value.Uint64())
+			sep = ",\n"
+		case metrics.KindFloat64:
+			fmt.Fprintf(&b, "%s%q: %g", sep, name, value.Float64())
+			sep = ",\n"
+		case metrics.KindFloat64Histogram:
+		case metrics.KindBad:
+		default:
+		}
+	}
+
 	fmt.Fprintf(&b, "}")
 	return b.String()
 }
